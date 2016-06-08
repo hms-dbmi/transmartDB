@@ -1,4 +1,4 @@
--- grant execute privs on DBMS_SERVICE
+# grant execute privs on DBMS_SERVICE
 exec rdsadmin.rdsadmin_util.grant_sys_object('DBMS_SERVICE','ROOT');
 
 exec rdsadmin.rdsadmin_util.grant_sys_object('GV_$ACTIVE_SERVICES','ROOT');
