@@ -1,0 +1,157 @@
+-- grant execute privs on DBMS_SERVICE
+exec rdsadmin.rdsadmin_util.grant_sys_object('DBMS_SERVICE','ROOT');
+
+exec rdsadmin.rdsadmin_util.grant_sys_object('GV_$ACTIVE_SERVICES','ROOT');
+
+create or replace PACKAGE MANAGE_DB_SERVICES AS 
+  
+  -----------------------------------------------------------
+  --
+  -- Change these variable to change the name of the service
+  -- if your stack_name is 'tm-dev', then INITIALIZE_DB_SERVICES  procedure will create the following 2 service
+  --  1) tm-dev-db-data-srv
+  --  2) tm-dev-db-etl-srv
+  --
+  -----------------------------------------------------------
+  
+  v_data_srv_suffix varchar2(30) := '-db-data-srv';
+  v_etl_srv_suffix varchar2(30) := '-db-etl-srv';
+  -- Please make sure to add period before the domain name
+  v_domain varchar2(30) := '.hms.harvard.edu';
+  
+  PROCEDURE CLEAR_DB_SERVICES(p_stack_name in VARCHAR);
+  
+  PROCEDURE INITIALIZE_DB_SERVICES(p_stack_name IN VARCHAR);
+  
+  PROCEDURE CREATE_DB_SERVICE(p_service_name in VARCHAR);
+  
+  PROCEDURE DELETE_DB_SERVICE(p_service_name in VARCHAR);
+  
+  PROCEDURE SHOW_ACTIVE_DB_SERVICES;
+  
+  PROCEDURE START_DB_SERVICE(p_service_name in VARCHAR);
+  
+  PROCEDURE STOP_DB_SERVICE(p_service_name in VARCHAR) ;
+
+END MANAGE_DB_SERVICES;
+/
+
+CREATE OR REPLACE
+PACKAGE BODY MANAGE_DB_SERVICES AS
+
+  
+  PROCEDURE CLEAR_DB_SERVICES(p_stack_name in VARCHAR) 
+  AS
+  BEGIN
+    
+    dbms_output.put_line('Stopping and deleting service: '||p_stack_name||v_data_srv_suffix || '  ....');
+    STOP_DB_SERVICE(p_stack_name||v_data_srv_suffix);
+    DELETE_DB_SERVICE(p_stack_name||v_data_srv_suffix);
+    dbms_output.put_line('Done.');
+    
+    
+    dbms_output.put_line('Stopping and deleting service: '||p_stack_name||v_etl_srv_suffix || '  ....');
+    STOP_DB_SERVICE(p_stack_name||v_etl_srv_suffix); 
+    DELETE_DB_SERVICE(p_stack_name||v_etl_srv_suffix);
+    dbms_output.put_line('Done.');
+    
+    SHOW_ACTIVE_DB_SERVICES;
+    
+  END CLEAR_DB_SERVICES;
+
+  PROCEDURE INITIALIZE_DB_SERVICES(p_stack_name in VARCHAR) 
+  AS
+  BEGIN
+
+    dbms_output.put_line('Creating and starting service: '||p_stack_name||v_data_srv_suffix || '  ....');  
+    CREATE_DB_SERVICE(p_stack_name||v_data_srv_suffix);
+    START_DB_SERVICE(p_stack_name||v_data_srv_suffix);
+    dbms_output.put_line('Done.');
+    
+    dbms_output.put_line('Creating and starting service: '||p_stack_name||v_etl_srv_suffix || '  ....'); 
+    CREATE_DB_SERVICE(p_stack_name||v_etl_srv_suffix);
+    START_DB_SERVICE(p_stack_name||v_etl_srv_suffix); 
+    dbms_output.put_line('Done.');
+    
+    SHOW_ACTIVE_DB_SERVICES;
+
+  END INITIALIZE_DB_SERVICES;
+  
+  PROCEDURE CREATE_DB_SERVICE(p_service_name in VARCHAR) 
+  AS
+  BEGIN
+    sys.dbms_service.create_service(p_service_name,p_service_name||v_domain);
+    
+    EXCEPTION
+    WHEN sys.dbms_service.SERVICE_EXISTS then
+    dbms_output.put_line('Service: '||p_service_name||' already exists');
+
+  END CREATE_DB_SERVICE; 
+  
+  PROCEDURE DELETE_DB_SERVICE(p_service_name in VARCHAR) 
+  AS
+  BEGIN
+
+    sys.dbms_service.delete_service(p_service_name);
+    
+    EXCEPTION
+    WHEN sys.dbms_service.SERVICE_DOES_NOT_EXIST then
+    dbms_output.put_line('Service: '||p_service_name||' does not exists');
+  END DELETE_DB_SERVICE;   
+  
+  PROCEDURE SHOW_ACTIVE_DB_SERVICES 
+  AS
+  BEGIN
+  dbms_output.put_line('' );
+  dbms_output.put_line('Following Services are active for this database' );
+  dbms_output.put_line('-----------------------------------------------' );
+    for v_c1 in ( SELECT service_id, name, network_name FROM gv$active_services where network_name is not null)
+    loop
+      dbms_output.put_line('Service Name: '||v_c1.network_name );
+    end loop;
+  END SHOW_ACTIVE_DB_SERVICES;
+ 
+  
+  PROCEDURE START_DB_SERVICE(p_service_name in VARCHAR) 
+  AS
+  v_db_name VARCHAR2(30) := null;
+  BEGIN
+  
+    select name into v_db_name from v$database;
+    sys.dbms_service.start_service(p_service_name, v_db_name);
+    
+    EXCEPTION
+    WHEN sys.dbms_service.SERVICE_IN_USE then
+    dbms_output.put_line('Service: '||p_service_name||' already in use');
+
+  END START_DB_SERVICE;
+  
+  
+  
+  PROCEDURE STOP_DB_SERVICE(p_service_name in VARCHAR) 
+  AS
+  BEGIN
+
+    sys.dbms_service.stop_service(p_service_name);
+    
+    EXCEPTION
+    WHEN sys.dbms_service.SERVICE_NOT_RUNNING then
+    dbms_output.put_line('Service: '||p_service_name||' not running anymore');
+  END STOP_DB_SERVICE;   
+
+END MANAGE_DB_SERVICES;
+
+/
+
+-- command to create services
+set serveroutput on
+exec MANAGE_DB_SERVICES.INITIALIZE_DB_SERVICES('tm-dev');
+
+-- command to see services
+set SERVEROUTPUT ON
+exec MANAGE_DB_SERVICES.SHOW_ACTIVE_DB_SERVICES;
+
+
+-- command to remove/clear services
+set serveroutput on
+exec MANAGE_DB_SERVICES.CLEAR_DB_SERVICES('tm-dev');
